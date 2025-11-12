@@ -64,3 +64,7 @@ double prom_Wilson_loops(int n, int *aristas);
 
 
 void inicializa_nodos_wilson( int n, int m, int nodos_wilson[][m][2]);
+
+void dame_O_nn(int *aristas, double *O, int n);
+
+void indices_loop_nn(int Nodo_inicial, int *vector, int n, int direccion);

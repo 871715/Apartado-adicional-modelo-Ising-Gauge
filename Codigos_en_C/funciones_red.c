@@ -254,3 +254,105 @@ void dame_wilsons_nn(int *aristas, int *wilsons, int n){
 }
 
 
+
+
+void dame_O_nn(int *aristas, double *O, int n){
+    int potencias_2[4*n],combinaciones,iteraciones[4*n],plaquetas[3*L*L*L];
+    int indices[4*n];
+    potencias_2[0]=1;
+    iteraciones[0]=0;
+
+    double prob_wilson=0,funcion_particion=0,suma=0;
+
+    for(int i=1;i<4*n;i++){
+        potencias_2[i]=potencias_2[i-1]*2;
+        iteraciones[i]=0;
+    }
+    combinaciones=potencias_2[4*n-1]*2;
+
+    for(int j=0;j<L*L*L;j++){
+        for(int k=0;k<3;k++){//direcciones
+            indices_loop_nn(j,indices,n,k);
+            suma=0;
+            funcion_particion=0;
+            for(int i=1;i<=combinaciones;i++){
+                for(int m=0;m<4*n;m++){
+                    iteraciones[m]++;
+                }
+                for(int l=0;l<4*n;l++){
+                    if(iteraciones[l]==potencias_2[l]){
+                        aristas[indices[l]]*=-1;
+                        iteraciones[l]=0;
+                    }
+                }
+                dame_plaquetas(aristas,plaquetas);
+                prob_wilson=exp(-beta*energia_normalizada(plaquetas));
+                funcion_particion+=prob_wilson;
+                if(k==0){
+                    suma+=un_loop_x(j,aristas,n)*prob_wilson;
+                }else if(k==1){
+                    suma+=un_loop_y(j,aristas,n)*prob_wilson;
+                }else if(k=2){
+                    suma+=un_loop_z(j,aristas,n)*prob_wilson;
+                }
+            }
+            O[3*j+k]=suma/funcion_particion;
+        }
+    }
+}
+
+void indices_loop_nn(int Nodo_inicial, int *vector, int n, int direccion){
+    int nodo=Nodo_inicial;
+    if(direccion==0){
+    for(int i=0;i<n;i++){
+        vector[i]=3*nodo+1;
+        nodo+=yp[nodo];
+    }
+    for(int i=0;i<n;i++){
+        vector[i+n]=3*nodo+2;
+        nodo+=zp[nodo];
+    }
+    for(int i=0;i<n;i++){
+        nodo+=ym[nodo];
+        vector[i+2*n]=3*nodo+1;
+    }
+    for(int i=0;i<n;i++){
+        nodo+=zm[nodo];
+        vector[i+3*n]=3*nodo+2;
+    }
+    }else if(direccion==1){
+        for(int i=0;i<n;i++){
+        vector[i]=3*nodo;
+        nodo+=xp[nodo];
+    }
+    for(int i=0;i<n;i++){
+        vector[i+n]=3*nodo+2;
+        nodo+=zp[nodo];
+    }
+    for(int i=0;i<n;i++){
+        nodo+=xm[nodo];
+        vector[i+2*n]=3*nodo;
+    }
+    for(int i=0;i<n;i++){
+        nodo+=zm[nodo];
+        vector[i+3*n]=3*nodo+2;
+    }
+    }else if(direccion==2){
+        for(int i=0;i<n;i++){
+        vector[i]=3*nodo+1;
+        nodo+=yp[nodo];
+    }
+    for(int i=0;i<n;i++){
+        vector[i+n]=3*nodo;
+        nodo+=xp[nodo];
+    }
+    for(int i=0;i<n;i++){
+        nodo+=ym[nodo];
+        vector[i+2*n]=3*nodo+1;
+    }
+    for(int i=0;i<n;i++){
+        nodo+=xm[nodo];
+        vector[i+3*n]=3*nodo;
+    }
+    }
+}
