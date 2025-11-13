@@ -6,6 +6,7 @@
 #include <string.h>
 #include "random.h"
 #include "parametros.h"
+#include "funciones_dinamica.h"
 
 // Arrays globales de vecinos
 extern int xp[L*L*L];
@@ -68,3 +69,5 @@ void inicializa_nodos_wilson( int n, int m, int nodos_wilson[][m][2]);
 void dame_O_nn(int *aristas, double *O, int n);
 
 void indices_loop_nn(int Nodo_inicial, int *vector, int n, int direccion);
+
+void calculo_promedios_onn(int *s, int n, int m, int n_pasos, int n_pasos_entre_mediciones, int n_termalizacion, double probabilidades[5]);

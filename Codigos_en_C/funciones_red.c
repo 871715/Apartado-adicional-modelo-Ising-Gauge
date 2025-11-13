@@ -356,3 +356,94 @@ void indices_loop_nn(int Nodo_inicial, int *vector, int n, int direccion){
     }
     }
 }
+
+void calculo_promedios_onn(int *s, int n, int m, int n_pasos, int n_pasos_entre_mediciones, int n_termalizacion, double probabilidades[5]) {
+    int aceptadas = 0;
+    int plaquetas[3*L*L*L];
+    dame_plaquetas(s, plaquetas);
+
+    // Termalización
+    N_pasos_metropolis(n_termalizacion, s, plaquetas, probabilidades, &aceptadas);
+
+    // Reservar memoria para resultados
+    double **resultados_onn = malloc(n * sizeof(double *));
+    double **promedios_onn = malloc(n * sizeof(double *));
+    
+    for (int i = 0; i < n; i++) {
+        resultados_onn[i] = malloc(m * sizeof(double));
+        promedios_onn[i] = malloc(3 * sizeof(double)); // media, desv, error
+    }
+
+    // Inicializar
+    for(int i = 0; i < n; i++) {
+        for(int j = 0; j < m; j++) {
+            resultados_onn[i][j] = 0.0;
+        }
+    }
+
+    // Dinámica y medición
+    int num_medidas = n_pasos / n_pasos_entre_mediciones;
+    
+    for(int medida = 0; medida < num_medidas; medida++) {
+        double *O_current = malloc(3*L*L*L * sizeof(double));
+        
+        for(int tamaño = 0; tamaño < n; tamaño++) {
+            int n_val = tamaño + 1; // tamaños de 1 a n
+            dame_O_nn(s, O_current, n_val);
+            
+            // Promedio sobre toda la red para este tamaño
+            double suma = 0.0;
+            for(int idx = 0; idx < 3*L*L*L; idx++) {
+                suma += O_current[idx];
+            }
+            resultados_onn[tamaño][medida] = suma / (3*L*L*L);
+        }
+        
+        free(O_current);
+        N_pasos_metropolis(n_pasos_entre_mediciones, s, plaquetas, probabilidades, &aceptadas);
+    }
+
+    // Calcular estadísticas
+    for(int i = 0; i < n; i++) {
+        double media = 0.0, varianza = 0.0;
+        
+        for(int j = 0; j < num_medidas; j++) {
+            media += resultados_onn[i][j];
+        }
+        media /= num_medidas;
+        
+        for(int j = 0; j < num_medidas; j++) {
+            double diff = resultados_onn[i][j] - media;
+            varianza += diff * diff;
+        }
+        varianza /= num_medidas;
+        double desviacion = sqrt(varianza);
+        double error = desviacion / sqrt(num_medidas);
+        
+        promedios_onn[i][0] = media;
+        promedios_onn[i][1] = desviacion;
+        promedios_onn[i][2] = error;
+        
+        printf("O_nn (n=%d): media = %f, desv = %f, error = %f\n", 
+               i+1, media, desviacion, error);
+    }
+
+    // Guardar resultados (similar a calculo_promedios_wilson)
+    char filename[256];
+    FILE* file = fopen("Resultados_simulacion/PROMEDIOS_ONN/resultados.txt", "w");
+    if (file) {
+        for(int i = 0; i < n; i++) {
+            fprintf(file, "%d\t%f\t%f\t%f\n", i+1, 
+                    promedios_onn[i][0], promedios_onn[i][1], promedios_onn[i][2]);
+        }
+        fclose(file);
+    }
+
+    // Liberar memoria
+    for(int i = 0; i < n; i++) {
+        free(resultados_onn[i]);
+        free(promedios_onn[i]);
+    }
+    free(resultados_onn);
+    free(promedios_onn);
+}
