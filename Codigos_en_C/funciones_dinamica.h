@@ -40,6 +40,7 @@ void dinamica_metropolis(int N_sweeps_entre_med, int N_medidas, double probabili
 void crea_configuracionInicial_termalizacion( int flag, int *s);
 
 double promedio(int *variable, int N);
+double promedioDouble(double *variable, int N);
 void calcular_media_std(double *data, int N, double *media, double *std);
 void crear_ventanas(int k_ini, int k_final, int N_ventana, int N_salto);
 void crear_media_global(int k_ini, int k_final);
@@ -51,3 +52,20 @@ void dinamica_metropolis_main(
     int *aristas,
     int *plaquetas, char *filename_aristas
 );
+
+
+void dinamica_metropolis_Onn(
+    int N_sweeps_entre_med,
+    int N_medidas,
+    double probabilidades[5],
+    int *aristas,
+    int *plaquetas
+#ifdef correlacion
+    , const char* filename_evolucion,
+    const char* filename_param
+#endif
+);
+
+// Cambiar las declaraciones para aceptar índice como parámetro
+void dinamica_metropolis_w10(int N_sweeps_entre_med, int N_medidas, double probabilidades[5], int *aristas, int *plaquetas, int indice);
+void dinamica_metropolis_O10(int N_sweeps_entre_med, int N_medidas, double probabilidades[5], int *aristas, int *plaquetas, int indice);

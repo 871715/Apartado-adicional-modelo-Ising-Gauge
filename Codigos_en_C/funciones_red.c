@@ -255,7 +255,7 @@ void dame_wilsons_nn(int *aristas, int *wilsons, int n){
 
 
 
-
+/*
 void dame_O_nn(int *aristas, double *O, int n){
     int potencias_2[4*n],combinaciones,iteraciones[4*n],plaquetas[3*L*L*L];
     int indices[4*n];
@@ -300,7 +300,108 @@ void dame_O_nn(int *aristas, double *O, int n){
         }
     }
 }
-
+*/
+//A ver si está bien esta versión corregida
+void dame_O_nn(int *aristas, double *O, int n) {
+    int V = L * L * L;
+    double probabilidades[5];
+    int muestras_terma;
+    int muestras_medida;
+    if (n<=3){
+        muestras_medida=300;
+        muestras_terma=200;
+    }
+    else if (n<=6){
+        muestras_medida=200;
+        muestras_terma=150;
+    }
+    else{
+        muestras_medida=150;
+        muestras_terma=100;
+    }
+    vector_cociente_prob(probabilidades);
+    
+    printf("🔄 Calculando O'_%d con MC local (%d+%d muestras)...\n", n, muestras_terma, muestras_medida);
+    
+    #pragma omp parallel for
+    for (int idx = 0; idx < 3 * V; idx++) {
+        int j = idx / 3;  // nodo
+        int k = idx % 3;  // dirección
+        
+        // Crear copia local para este loop
+        int *aristas_local = malloc(3 * V * sizeof(int));
+        int *plaquetas_local = malloc(3 * V * sizeof(int));
+        memcpy(aristas_local, aristas, 3 * V * sizeof(int));
+        
+        // Identificar aristas relevantes para este loop
+        int indices[4 * n];
+        indices_loop_nn(j, indices, n, k);
+        int num_aristas_loop = 4 * n;
+        
+        double suma_wilson = 0.0;
+        int aceptadas = 0;
+        
+        // 1. TERMALIZACIÓN LOCAL
+        for (int paso = 0; paso < muestras_terma; paso++) {
+            for (int a = 0; a < num_aristas_loop; a++) {
+                int arista_idx = indices[a];
+                int posiciones[4];
+                posicion_plaquetas(arista_idx, posiciones);
+                int index_prob = indice_cociente_prob(plaquetas_local, posiciones);
+                
+                double r = fran();
+                if (r < probabilidades[index_prob]) {
+                    // Aplicar flip
+                    for (int i = 0; i < 4; i++) {
+                        plaquetas_local[posiciones[i]] = -plaquetas_local[posiciones[i]];
+                    }
+                    aristas_local[arista_idx] = -aristas_local[arista_idx];
+                    aceptadas++;
+                }
+            }
+        }
+        
+        // 2. MEDICIÓN
+        for (int paso = 0; paso < muestras_medida; paso++) {
+            // Un paso de Metropolis local
+            for (int a = 0; a < num_aristas_loop; a++) {
+                int arista_idx = indices[a];
+                int posiciones[4];
+                posicion_plaquetas(arista_idx, posiciones);
+                int index_prob = indice_cociente_prob(plaquetas_local, posiciones);
+                
+                double r = fran();
+                if (r < probabilidades[index_prob]) {
+                    for (int i = 0; i < 4; i++) {
+                        plaquetas_local[posiciones[i]] = -plaquetas_local[posiciones[i]];
+                    }
+                    aristas_local[arista_idx] = -aristas_local[arista_idx];
+                }
+            }
+            
+            // Medir Wilson loop
+            double wilson_val;
+            if (k == 0) wilson_val = (double)un_loop_x(j, aristas_local, n);
+            else if (k == 1) wilson_val = (double)un_loop_y(j, aristas_local, n);
+            else wilson_val = (double)un_loop_z(j, aristas_local, n);
+            
+            suma_wilson += wilson_val;
+        }
+        
+        O[idx] = suma_wilson / muestras_medida;
+        
+        // Verificar resultado
+        if (isnan(O[idx]) || isinf(O[idx])) {
+            printf("⚠️  O[%d] inválido = %f, forzando a 0\n", idx, O[idx]);
+            O[idx] = 0.0;
+        }
+        
+        free(aristas_local);
+        free(plaquetas_local);
+    }
+    
+    printf("✅ O'_%d calculado exitosamente\n", n);
+}
 void indices_loop_nn(int Nodo_inicial, int *vector, int n, int direccion){
     int nodo=Nodo_inicial;
     if(direccion==0){

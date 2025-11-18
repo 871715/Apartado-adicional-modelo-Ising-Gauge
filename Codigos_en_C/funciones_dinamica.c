@@ -629,7 +629,13 @@ double promedio(int *variable, int N) {
     return suma / N;
 }
 
-
+double promedioDouble(double *variable, int N){
+    double suma=0.0;
+    for (int i=0;i<N;i++){
+        suma+=variable[i];
+    }
+    return (double)suma/N;
+}
 
 
 void guarda_parametros(int n, int m, int n_pasos, int n_pasos_entre_mediciones, int n_termalizacion){
@@ -942,20 +948,6 @@ fclose(fc);
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 void dinamica_metropolis_main(
     int N_sweeps_entre_med,
     int N_medidas,
@@ -1187,5 +1179,627 @@ void dinamica_metropolis_main(
     fin_io = clock();
 }
 
+void dinamica_metropolis_Onn(
+    int N_sweeps_entre_med,
+    int N_medidas,
+    double probabilidades[5],
+    int *aristas,
+    int *plaquetas
+#ifdef correlacion
+    , const char* filename_evolucion,
+    const char* filename_param
+#endif
+) {
+    int V = 3 * L * L * L;
+    
+    // Variables para medición de tiempos
+    clock_t inicio_total, fin_total;
+    clock_t inicio_io, fin_io;
+    clock_t inicio_calculos, fin_calculos;
+    clock_t inicio_metropolis, fin_metropolis;
+    
+    double tiempo_total, tiempo_io = 0.0, tiempo_calculos = 0.0, tiempo_metropolis = 0.0;
 
+#ifndef correlacion
+    char filename_param[256];
+#endif
+
+#ifndef correlacion
+    // -------------------------
+    // Determinar nombre del archivo de salida
+    // -------------------------
+    char* folder_inicial;
+    char* folder_salida; 
+    char* folder_final; 
+    char* folder_param;
+
+#ifdef termalizacion
+    if (beta == 0.72) {
+        folder_inicial = "Resultados_simulacion/TERMALIZACION/0.72/CONFIGURACION_INICIAL";
+        folder_salida  = "Resultados_simulacion/TERMALIZACION/0.72/EVOLUCION";
+        folder_final   = "Resultados_simulacion/TERMALIZACION/0.72/CONFIGURACION_FINAL";
+        folder_param   = "Resultados_simulacion/TERMALIZACION/0.72/PARAMETROS";
+    } else if (beta == 0.8) {
+        folder_inicial = "Resultados_simulacion/TERMALIZACION/0.80/CONFIGURACION_INICIAL";
+        folder_salida  = "Resultados_simulacion/TERMALIZACION/0.80/EVOLUCION";
+        folder_final   = "Resultados_simulacion/TERMALIZACION/0.80/CONFIGURACION_FINAL";
+        folder_param   = "Resultados_simulacion/TERMALIZACION/0.80/PARAMETROS";
+    } else {
+        printf("PON EL VALOR DE BETA QUE TOCA, AMIGO MIO");
+    }
+#else 
+    folder_inicial = "Resultados_simulacion/CONFIGURACION_INICIAL";
+#endif
+#endif // !correlacion
+    
+    // Iniciar medición de tiempo total
+    inicio_total = clock();
+
+#ifndef correlacion
+    char filename[256];
+    int d = 0;
+    FILE* ftest;
+
+    // Medir tiempo de I/O para búsqueda de archivos
+    inicio_io = clock();
+    
+    // Buscar el mayor índice de configuración inicial existente
+    while (1) {
+        snprintf(filename, sizeof(filename), "%s/I_%d.txt", folder_inicial, d);
+        ftest = fopen(filename, "r");
+        if (ftest) {
+            fclose(ftest);
+            d++;
+        } else break;
+    }
+
+    if (d == 0) {
+        printf("No se encontraron archivos iniciales en %s\n", folder_inicial);
+        return;
+    }
+    d--; // Tomamos el mayor k existente
+
+    snprintf(filename, sizeof(filename), "%s/I_%d.txt", folder_salida, d);
+    FILE* foutput = fopen(filename, "w");
+#else
+    // En modo correlación, usamos los nombres pasados como parámetros
+    FILE* foutput = fopen(filename_evolucion, "w");
+#endif
+
+    if (!foutput) {
+#ifdef correlacion
+        printf("No se pudo crear el archivo %s\n", filename_evolucion);
+#else
+        printf("No se pudo crear el archivo %s\n", filename);
+#endif
+        return;
+    }
+
+#ifndef correlacion
+    fin_io = clock();
+    tiempo_io += (double)(fin_io - inicio_io) / CLOCKS_PER_SEC;
+#endif
+
+    // -------------------------
+    // Escribir cabecera del archivo
+    // -------------------------
+    fprintf(foutput, "# tiempo\tenergia_plaqueta\tO2\tO3\tO4\tO5\tmagnetizacion\n");
+
+    // -------------------------
+    // Dinámica de Metropolis con O'ₙ
+    // -------------------------
+    int paso, aceptadas = 0;
+    double media_plaqueta, mag;
+
+    for (paso = 1; paso <= N_medidas; paso++) {
+        // Tiempo de Metropolis
+        inicio_metropolis = clock();
+        N_pasos_metropolis(N_sweeps_entre_med, aristas, plaquetas, probabilidades, &aceptadas);
+        fin_metropolis = clock();
+        tiempo_metropolis += (double)(fin_metropolis - inicio_metropolis) / CLOCKS_PER_SEC;
+
+        // Tiempo de cálculos - MEDICIÓN DE O'ₙ
+        inicio_calculos = clock();
+        
+        // Calcular plaquetas y energía
+        media_plaqueta = promedio(plaquetas, V);
+
+        // Calcular O'ₙ para diferentes tamaños
+        double *O_current = malloc(3*L*L*L * sizeof(double));
+        double O2 = 0.0, O3 = 0.0, O4 = 0.0, O5 = 0.0;
+        
+        dame_O_nn(aristas, O_current, 2);
+        O2 = promedioDouble(O_current, V);
+        
+        dame_O_nn(aristas, O_current, 3);
+        O3 = promedioDouble(O_current, V);
+        
+        dame_O_nn(aristas, O_current, 4);
+        O4 = promedioDouble(O_current, V);
+        
+        dame_O_nn(aristas, O_current, 5);
+        O5 = promedioDouble(O_current, V);
+        
+        free(O_current);
+
+        // Calcular magnetización
+        mag = (double)magnetizacion(aristas) / V;
+
+        fin_calculos = clock();
+        tiempo_calculos += (double)(fin_calculos - inicio_calculos) / CLOCKS_PER_SEC;
+
+        // -------------------------
+        // Escritura (I/O)
+        // -------------------------
+        inicio_io = clock();
+
+        fprintf(foutput, "%d\t%f\t", paso * N_sweeps_entre_med, media_plaqueta);
+        fprintf(foutput, "%f\t%f\t%f\t%f\t", O2, O3, O4, O5);
+        fprintf(foutput, "%f\n", mag);
+
+        // Mostrar progreso cada 1000 pasos
+        if (paso % 1000 == 0) {
+            printf("Paso %d/%d - O2: %f - Aceptadas: %d\n", 
+                   paso, N_medidas, O2, aceptadas);
+        }
+
+        fin_io = clock();
+        tiempo_io += (double)(fin_io - inicio_io) / CLOCKS_PER_SEC;
+    }
+
+    fclose(foutput);
+
+#ifndef correlacion
+    // -------------------------
+    // Guardar configuración final (aristas) - I/O
+    // -------------------------
+    inicio_io = clock();
+    
+    char filename_final[256];
+    snprintf(filename_final, sizeof(filename_final), "%s/I_%d.txt", folder_final, d);
+
+    FILE* fconfig = fopen(filename_final, "w");
+    if (!fconfig) {
+        printf("No se pudo crear el archivo de configuración final %s\n", filename_final);
+        return;
+    }
+
+    for (int i = 0; i < V; i++) {
+        fprintf(fconfig, "%d\n", aristas[i]);
+    }
+
+    fclose(fconfig);
+    fin_io = clock();
+    tiempo_io += (double)(fin_io - inicio_io) / CLOCKS_PER_SEC;
+#endif
+
+    // -------------------------
+    // Medición del tiempo total y mostrar resultados
+    // -------------------------
+    fin_total = clock();
+    tiempo_total = (double)(fin_total - inicio_total) / CLOCKS_PER_SEC;
+
+    printf("\n=== DESGLOSE DE TIEMPOS (O'ₙ) ===\n");
+    printf("Tiempo total: %.2f s\n", tiempo_total);
+    printf(" - Metropolis: %.2f s (%.1f%%)\n", tiempo_metropolis, (tiempo_metropolis/tiempo_total)*100.0);
+    printf(" - Cálculos O'ₙ: %.2f s (%.1f%%)\n", tiempo_calculos, (tiempo_calculos/tiempo_total)*100.0);
+    printf(" - I/O: %.2f s (%.1f%%)\n", tiempo_io, (tiempo_io/tiempo_total)*100.0);
+
+    // -------------------------
+    // Guardar tiempo total en archivo de parámetros
+    // -------------------------
+    inicio_io = clock();
+#ifdef correlacion
+    FILE* fparam = fopen(filename_param, "a");
+#else
+    snprintf(filename_param, sizeof(filename_param), "%s/I_%d.txt", folder_param, d);
+    FILE* fparam = fopen(filename_param, "a");
+#endif
+
+    if (fparam) {
+        fprintf(fparam, "Tiempo_total_O_nn(s)\t%f\n", tiempo_total);
+        fprintf(fparam," - Metropolis: %.2f s (%.1f%%)\n", tiempo_metropolis, (tiempo_metropolis/tiempo_total)*100.0);
+        fprintf(fparam," - Cálculos O'ₙ: %.2f s (%.1f%%)\n", tiempo_calculos, (tiempo_calculos/tiempo_total)*100.0);
+        fprintf(fparam," - I/O: %.2f s (%.1f%%)\n", tiempo_io, (tiempo_io/tiempo_total)*100.0);
+        fclose(fparam);
+#ifdef correlacion
+        printf("Tiempo total O'ₙ guardado en %s\n", filename_param);
+#endif
+    } else {
+        printf("No se pudo abrir el archivo de parámetros %s\n", filename_param);
+    }
+    
+    fin_io = clock();
+}
+
+// Versión modificada de dinamica_metropolis que solo calcula w10
+void dinamica_metropolis_w10(int N_sweeps_entre_med, int N_medidas, double probabilidades[5], int *aristas, int *plaquetas, int indice) {
+    int V = 3 * L * L * L;
+    
+    // Variables para medición de tiempos
+    clock_t inicio_total, fin_total;
+    clock_t inicio_io, fin_io;
+    clock_t inicio_calculos, fin_calculos;
+    clock_t inicio_metropolis, fin_metropolis;
+    
+    double tiempo_total, tiempo_io = 0.0, tiempo_calculos = 0.0, tiempo_metropolis = 0.0;
+
+#ifndef correlacion
+    char filename_param[256];
+#endif
+
+#ifndef correlacion
+    // -------------------------
+    // Determinar nombre del archivo de salida
+    // -------------------------
+    char* folder_inicial;
+    char* folder_salida; 
+    char* folder_final; 
+    char* folder_param;
+
+#ifdef termalizacion
+    if (beta == 0.72) {
+        folder_inicial = "Resultados_simulacion/TERMALIZACION/0.72/CONFIGURACION_INICIAL";
+        folder_salida  = "Resultados_simulacion/TERMALIZACION/0.72/EVOLUCION";
+        folder_final   = "Resultados_simulacion/TERMALIZACION/0.72/CONFIGURACION_FINAL";
+        folder_param   = "Resultados_simulacion/TERMALIZACION/0.72/PARAMETROS";
+    } else if (beta == 0.8) {
+        folder_inicial = "Resultados_simulacion/TERMALIZACION/0.80/CONFIGURACION_INICIAL";
+        folder_salida  = "Resultados_simulacion/TERMALIZACION/0.80/EVOLUCION";
+        folder_final   = "Resultados_simulacion/TERMALIZACION/0.80/CONFIGURACION_FINAL";
+        folder_param   = "Resultados_simulacion/TERMALIZACION/0.80/PARAMETROS";
+    } else {
+        printf("PON EL VALOR DE BETA QUE TOCA, AMIGO MIO");
+    }
+#else 
+    folder_inicial = "Resultados_simulacion/CONFIGURACION_INICIAL";
+#endif
+#endif // !correlacion
+    
+    // Iniciar medición de tiempo total
+    inicio_total = clock();
+
+#ifndef correlacion
+    char filename[256];
+    int d = indice;
+    // Crear el archivo de salida
+    snprintf(filename, sizeof(filename), "%s/I_%d.txt", folder_salida, d);
+    FILE* foutput = fopen(filename, "w");
+    
+    if (!foutput) {
+        printf("No se pudo crear el archivo %s\n", filename);
+        return;
+    }
+#else
+    // En modo correlación, usamos los nombres pasados como parámetros
+    FILE* foutput = fopen(filename_evolucion, "w");
+#endif
+
+    if (!foutput) {
+#ifdef correlacion
+        printf("No se pudo crear el archivo %s\n", filename_evolucion);
+#else
+        printf("No se pudo crear el archivo %s\n", filename);
+#endif
+        return;
+    }
+
+#ifndef correlacion
+    fin_io = clock();
+    tiempo_io += (double)(fin_io - inicio_io) / CLOCKS_PER_SEC;
+#endif
+
+    // -------------------------
+    // Escribir cabecera del archivo - SOLO w10
+    // -------------------------
+    fprintf(foutput, "# tiempo\tenergia_plaqueta\tw10\tmagnetizacion\n");
+
+    // -------------------------
+    // Dinámica de Metropolis - SOLO w10
+    // -------------------------
+    int paso, aceptadas = 0;
+    int wilsons_10[V];
+    double media_w10, media_plaqueta, mag;
+
+    for (paso = 1; paso <= N_medidas; paso++) {
+        // Tiempo de Metropolis
+        inicio_metropolis = clock();
+        N_pasos_metropolis(N_sweeps_entre_med, aristas, plaquetas, probabilidades, &aceptadas);
+        fin_metropolis = clock();
+        tiempo_metropolis += (double)(fin_metropolis - inicio_metropolis) / CLOCKS_PER_SEC;
+
+        // Tiempo de cálculos - SOLO w10
+        inicio_calculos = clock();
+        
+        // Calcular plaquetas
+        media_plaqueta = promedio(plaquetas, V);
+
+        // Calcular SOLO Wilson 10×10
+        dame_wilsons_nn(aristas, wilsons_10, 10);
+        media_w10 = promedio(wilsons_10, V);
+
+        // Calcular magnetización
+        mag = (double)magnetizacion(aristas) / V;
+
+        fin_calculos = clock();
+        tiempo_calculos += (double)(fin_calculos - inicio_calculos) / CLOCKS_PER_SEC;
+
+        // -------------------------
+        // Escritura (I/O)
+        // -------------------------
+        inicio_io = clock();
+
+        fprintf(foutput, "%d\t%f\t%f\t%f\n", paso * N_sweeps_entre_med, media_plaqueta, media_w10, mag);
+
+        // Mostrar progreso cada 1000 pasos
+        if (paso % 1000 == 0) {
+            printf("Wilson 10×10 - Paso %d/%d - w10: %f - Aceptadas: %d\n", 
+                   paso, N_medidas, media_w10, aceptadas);
+        }
+
+        fin_io = clock();
+        tiempo_io += (double)(fin_io - inicio_io) / CLOCKS_PER_SEC;
+    }
+
+    fclose(foutput);
+
+#ifndef correlacion
+    // -------------------------
+    // Guardar configuración final (aristas) - I/O
+    // -------------------------
+    inicio_io = clock();
+    
+    char filename_final[256];
+    snprintf(filename_final, sizeof(filename_final), "%s/I_%d.txt", folder_final, d);
+
+    FILE* fconfig = fopen(filename_final, "w");
+    if (!fconfig) {
+        printf("No se pudo crear el archivo de configuración final %s\n", filename_final);
+        return;
+    }
+
+    for (int i = 0; i < V; i++) {
+        fprintf(fconfig, "%d\n", aristas[i]);
+    }
+
+    fclose(fconfig);
+    fin_io = clock();
+    tiempo_io += (double)(fin_io - inicio_io) / CLOCKS_PER_SEC;
+#endif
+
+    // -------------------------
+    // Medición del tiempo total y mostrar resultados
+    // -------------------------
+    fin_total = clock();
+    tiempo_total = (double)(fin_total - inicio_total) / CLOCKS_PER_SEC;
+
+    printf("\n=== DESGLOSE DE TIEMPOS (Wilson 10×10) ===\n");
+    printf("Tiempo total: %.2f s\n", tiempo_total);
+    printf(" - Metropolis: %.2f s (%.1f%%)\n", tiempo_metropolis, (tiempo_metropolis/tiempo_total)*100.0);
+    printf(" - Cálculos w10: %.2f s (%.1f%%)\n", tiempo_calculos, (tiempo_calculos/tiempo_total)*100.0);
+    printf(" - I/O: %.2f s (%.1f%%)\n", tiempo_io, (tiempo_io/tiempo_total)*100.0);
+
+    // -------------------------
+    // Guardar tiempo total en archivo de parámetros
+    // -------------------------
+    inicio_io = clock();
+#ifdef correlacion
+    FILE* fparam = fopen(filename_param, "a");
+#else
+    snprintf(filename_param, sizeof(filename_param), "%s/I_%d.txt", folder_param, d);
+    FILE* fparam = fopen(filename_param, "a");
+#endif
+
+    if (fparam) {
+        fprintf(fparam, "Tiempo_total_Wilson_10x10(s)\t%f\n", tiempo_total);
+        fprintf(fparam," - Metropolis: %.2f s (%.1f%%)\n", tiempo_metropolis, (tiempo_metropolis/tiempo_total)*100.0);
+        fprintf(fparam," - Cálculos w10: %.2f s (%.1f%%)\n", tiempo_calculos, (tiempo_calculos/tiempo_total)*100.0);
+        fprintf(fparam," - I/O: %.2f s (%.1f%%)\n", tiempo_io, (tiempo_io/tiempo_total)*100.0);
+        fclose(fparam);
+    } else {
+        printf("No se pudo abrir el archivo de parámetros %s\n", filename_param);
+    }
+    
+    fin_io = clock();
+}
+
+// Versión modificada de dinamica_metropolis_Onn que solo calcula O10
+void dinamica_metropolis_O10(int N_sweeps_entre_med, int N_medidas, double probabilidades[5], int *aristas, int *plaquetas, int indice) {
+    int V = 3 * L * L * L;
+    
+    // Variables para medición de tiempos
+    clock_t inicio_total, fin_total;
+    clock_t inicio_io, fin_io;
+    clock_t inicio_calculos, fin_calculos;
+    clock_t inicio_metropolis, fin_metropolis;
+    
+    double tiempo_total, tiempo_io = 0.0, tiempo_calculos = 0.0, tiempo_metropolis = 0.0;
+
+#ifndef correlacion
+    char filename_param[256];
+#endif
+
+#ifndef correlacion
+    // -------------------------
+    // Determinar nombre del archivo de salida
+    // -------------------------
+    char* folder_inicial;
+    char* folder_salida; 
+    char* folder_final; 
+    char* folder_param;
+
+#ifdef termalizacion
+    if (beta == 0.72) {
+        folder_inicial = "Resultados_simulacion/TERMALIZACION/0.72/CONFIGURACION_INICIAL";
+        folder_salida  = "Resultados_simulacion/TERMALIZACION/0.72/EVOLUCION";
+        folder_final   = "Resultados_simulacion/TERMALIZACION/0.72/CONFIGURACION_FINAL";
+        folder_param   = "Resultados_simulacion/TERMALIZACION/0.72/PARAMETROS";
+    } else if (beta == 0.8) {
+        folder_inicial = "Resultados_simulacion/TERMALIZACION/0.80/CONFIGURACION_INICIAL";
+        folder_salida  = "Resultados_simulacion/TERMALIZACION/0.80/EVOLUCION";
+        folder_final   = "Resultados_simulacion/TERMALIZACION/0.80/CONFIGURACION_FINAL";
+        folder_param   = "Resultados_simulacion/TERMALIZACION/0.80/PARAMETROS";
+    } else {
+        printf("PON EL VALOR DE BETA QUE TOCA, AMIGO MIO");
+    }
+#else 
+    folder_inicial = "Resultados_simulacion/CONFIGURACION_INICIAL";
+#endif
+#endif // !correlacion
+    
+    // Iniciar medición de tiempo total
+    inicio_total = clock();
+
+#ifndef correlacion
+    char filename[256];
+    int d = indice;  // Usar el índice que nos pasan
+    
+    // Crear el archivo de salida
+    snprintf(filename, sizeof(filename), "%s/I_%d.txt", folder_salida, d);
+    FILE* foutput = fopen(filename, "w");
+    
+    if (!foutput) {
+        printf("No se pudo crear el archivo %s\n", filename);
+        return;
+    }
+
+#else
+    // En modo correlación, usamos los nombres pasados como parámetros
+    FILE* foutput = fopen(filename_evolucion, "w");
+#endif
+
+    if (!foutput) {
+#ifdef correlacion
+        printf("No se pudo crear el archivo %s\n", filename_evolucion);
+#else
+        printf("No se pudo crear el archivo %s\n", filename);
+#endif
+        return;
+    }
+
+#ifndef correlacion
+    fin_io = clock();
+    tiempo_io += (double)(fin_io - inicio_io) / CLOCKS_PER_SEC;
+#endif
+
+    // -------------------------
+    // Escribir cabecera del archivo - SOLO O10
+    // -------------------------
+    fprintf(foutput, "# tiempo\tenergia_plaqueta\tO10\tmagnetizacion\n");
+
+    // -------------------------
+    // Dinámica de Metropolis - SOLO O10
+    // -------------------------
+    int paso, aceptadas = 0;
+    double media_plaqueta, mag, O10;
+
+    for (paso = 1; paso <= N_medidas; paso++) {
+        // Tiempo de Metropolis
+        inicio_metropolis = clock();
+        N_pasos_metropolis(N_sweeps_entre_med, aristas, plaquetas, probabilidades, &aceptadas);
+        fin_metropolis = clock();
+        tiempo_metropolis += (double)(fin_metropolis - inicio_metropolis) / CLOCKS_PER_SEC;
+
+        // Tiempo de cálculos - SOLO O10
+        inicio_calculos = clock();
+        
+        // Calcular plaquetas y energía
+        media_plaqueta = promedio(plaquetas, V);
+
+        // Calcular SOLO O'ₙ 10×10
+        double *O_current = malloc(3*L*L*L * sizeof(double));
+        dame_O_nn(aristas, O_current, 10);
+        O10 = promedioDouble(O_current, V);
+        // ✅ VERIFICAR si hay NaN
+        if (isnan(O10) || isinf(O10)) {
+            printf("⚠️  ADVERTENCIA: O10 = %f (posible error en dame_O_nn)\n", O10);
+            // Forzar un valor por defecto para continuar
+            O10 = 0.0;
+        }
+        free(O_current);
+
+        // Calcular magnetización
+        mag = (double)magnetizacion(aristas) / V;
+
+        fin_calculos = clock();
+        tiempo_calculos += (double)(fin_calculos - inicio_calculos) / CLOCKS_PER_SEC;
+
+        // -------------------------
+        // Escritura (I/O)
+        // -------------------------
+        inicio_io = clock();
+
+        fprintf(foutput, "%d\t%f\t%f\t%f\n", paso * N_sweeps_entre_med, media_plaqueta, O10, mag);
+
+        // Mostrar progreso cada 1000 pasos
+        if (paso % 1000 == 0) {
+            printf("O'ₙ 10×10 - Paso %d/%d - O10: %f - Aceptadas: %d\n", 
+                   paso, N_medidas, O10, aceptadas);
+        }
+
+        fin_io = clock();
+        tiempo_io += (double)(fin_io - inicio_io) / CLOCKS_PER_SEC;
+    }
+
+    fclose(foutput);
+
+#ifndef correlacion
+    // -------------------------
+    // Guardar configuración final (aristas) - I/O
+    // -------------------------
+    inicio_io = clock();
+    
+    char filename_final[256];
+    snprintf(filename_final, sizeof(filename_final), "%s/I_%d.txt", folder_final, d);
+
+    FILE* fconfig = fopen(filename_final, "w");
+    if (!fconfig) {
+        printf("No se pudo crear el archivo de configuración final %s\n", filename_final);
+        return;
+    }
+
+    for (int i = 0; i < V; i++) {
+        fprintf(fconfig, "%d\n", aristas[i]);
+    }
+
+    fclose(fconfig);
+    fin_io = clock();
+    tiempo_io += (double)(fin_io - inicio_io) / CLOCKS_PER_SEC;
+#endif
+
+    // -------------------------
+    // Medición del tiempo total y mostrar resultados
+    // -------------------------
+    fin_total = clock();
+    tiempo_total = (double)(fin_total - inicio_total) / CLOCKS_PER_SEC;
+
+    printf("\n=== DESGLOSE DE TIEMPOS (O'ₙ 10×10) ===\n");
+    printf("Tiempo total: %.2f s\n", tiempo_total);
+    printf(" - Metropolis: %.2f s (%.1f%%)\n", tiempo_metropolis, (tiempo_metropolis/tiempo_total)*100.0);
+    printf(" - Cálculos O10: %.2f s (%.1f%%)\n", tiempo_calculos, (tiempo_calculos/tiempo_total)*100.0);
+    printf(" - I/O: %.2f s (%.1f%%)\n", tiempo_io, (tiempo_io/tiempo_total)*100.0);
+
+    // -------------------------
+    // Guardar tiempo total en archivo de parámetros
+    // -------------------------
+    inicio_io = clock();
+#ifdef correlacion
+    FILE* fparam = fopen(filename_param, "a");
+#else
+    snprintf(filename_param, sizeof(filename_param), "%s/I_%d.txt", folder_param, d);
+    FILE* fparam = fopen(filename_param, "a");
+#endif
+
+    if (fparam) {
+        fprintf(fparam, "Tiempo_total_Onn_10x10(s)\t%f\n", tiempo_total);
+        fprintf(fparam," - Metropolis: %.2f s (%.1f%%)\n", tiempo_metropolis, (tiempo_metropolis/tiempo_total)*100.0);
+        fprintf(fparam," - Cálculos O10: %.2f s (%.1f%%)\n", tiempo_calculos, (tiempo_calculos/tiempo_total)*100.0);
+        fprintf(fparam," - I/O: %.2f s (%.1f%%)\n", tiempo_io, (tiempo_io/tiempo_total)*100.0);
+        fclose(fparam);
+    } else {
+        printf("No se pudo abrir el archivo de parámetros %s\n", filename_param);
+    }
+    
+    fin_io = clock();
+}
 
